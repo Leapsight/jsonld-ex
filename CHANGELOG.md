@@ -34,6 +34,21 @@ This project adheres to [Semantic Versioning](http://semver.org/) and
   coercion, simplifies to a bare literal — instead of falling back to a
   generic CURIE key with an uncompacted value object.
 
+### Changed
+
+- Pulled forward three warning-cleanup commits from upstream
+  `rdf-elixir/jsonld-ex` (`62ced20` "Fix warnings under Elixir v1.19",
+  `b65b16c` "Fix Credo warning", `d6abca7` "Fix warnings under Elixir
+  v1.20"): a `mix.exs` migration off the deprecated `:preferred_cli_env`
+  project key to `def cli/0`, and Elixir 1.19/1.20 type-checker fixes in
+  `context.ex`, `context/term_definition.ex`, `compaction.ex`, and
+  `iri_expansion.ex` (the latter two reapplied by hand, since this fork's
+  versions of those files have diverged substantially from upstream to
+  support Framing). No upstream Framing code was pulled in — upstream has
+  no Framing implementation to sync from; this fork's Framing engine is
+  original work. `json_ld` now compiles with zero warnings under Elixir
+  1.19.4/OTP 28 (`mix compile --warnings-as-errors`).
+
 
 ## 1.0.0 - 2025-04-09
 
