@@ -638,8 +638,23 @@ defmodule JSON.LD.Expansion do
                       end
                     end
 
-                    # For framing keywords, just return the value directly (don't expand)
-                    value
+                    if expanded_property == "@default" and is_map(value) do
+                      # @default's value can be a JSON-LD value-object or
+                      # node-object (not a framing pattern) and must be
+                      # recursively expanded so nested @type/@value IRIs get
+                      # resolved. Recursing with active_property "@default"
+                      # disables frame_expansion for this call (see expand/5
+                      # above), matching the reference algorithm.
+                      #
+                      # Scalars (plain compact-IRI strings, the "@null"
+                      # sentinel, booleans) are left as-is: other code paths
+                      # already handle those directly at the point of use
+                      # (e.g. IRI-expanding a compact @type default, or
+                      # checking for the literal "@null" marker in framing.ex).
+                      expand(active_context, expanded_property, value, options, processor_options)
+                    else
+                      value
+                    end
 
                   _ ->
                     nil

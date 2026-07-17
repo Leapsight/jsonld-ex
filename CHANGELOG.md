@@ -5,6 +5,51 @@ This project adheres to [Semantic Versioning](http://semver.org/) and
 [Keep a CHANGELOG](http://keepachangelog.com).
 
 
+## Unreleased (Leapsight fork)
+
+### Fixed
+
+- JSON-LD Framing: fixed an O(n²) performance issue in blank-node-identifier
+  pruning (`JSON.LD.Framing.prune_blank_node_identifiers/2`). Previously, for
+  every blank node occurring exactly once in the framed result, the pruner
+  re-scanned the *entire* result tree to determine whether that blank node's
+  id was required by a `@type: @id` property. Any input with many
+  single-occurrence blank nodes — e.g. one embedded/nested object per row in
+  a multi-row result — paid a cost proportional to `blank_nodes × tree_size`,
+  making `frame/2` scale quadratically with row count instead of linearly.
+  The check now runs as a single O(n) pass that collects every id needed by
+  an `@type: @id` property up front, then does an O(1) lookup per candidate
+  blank node.
+
+- JSON-LD Framing: fixed incorrect compaction of `@default` values used to
+  fill in a missing property during framing (e.g.
+  `"url": {"@default": {"@type": "schema:URL", "@value": "..."}}}`). Two
+  compounding bugs: (1) `JSON.LD.Expansion` never recursively expanded a
+  map-shaped `@default` value, so nested `@type`/`@id` CURIEs were never
+  resolved to full IRIs; (2) `JSON.LD.Framing.merge_framing_keywords/2`
+  unconditionally overwrote `@default` in the expanded frame with the raw,
+  unexpanded value from the original frame, which would have silently
+  undone fix (1) on its own. The injected default now compacts using its
+  proper term (e.g. `url`) and, where the term has matching `@type`
+  coercion, simplifies to a bare literal — instead of falling back to a
+  generic CURIE key with an uncompacted value object.
+
+### Changed
+
+- Pulled forward three warning-cleanup commits from upstream
+  `rdf-elixir/jsonld-ex` (`62ced20` "Fix warnings under Elixir v1.19",
+  `b65b16c` "Fix Credo warning", `d6abca7` "Fix warnings under Elixir
+  v1.20"): a `mix.exs` migration off the deprecated `:preferred_cli_env`
+  project key to `def cli/0`, and Elixir 1.19/1.20 type-checker fixes in
+  `context.ex`, `context/term_definition.ex`, `compaction.ex`, and
+  `iri_expansion.ex` (the latter two reapplied by hand, since this fork's
+  versions of those files have diverged substantially from upstream to
+  support Framing). No upstream Framing code was pulled in — upstream has
+  no Framing implementation to sync from; this fork's Framing engine is
+  original work. `json_ld` now compiles with zero warnings under Elixir
+  1.19.4/OTP 28 (`mix compile --warnings-as-errors`).
+
+
 ## 1.0.0 - 2025-04-09
 
 This version upgrades the implementation to support JSON-LD 1.1.

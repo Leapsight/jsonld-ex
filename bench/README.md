@@ -126,6 +126,21 @@ To track performance over time:
 2. Compare results to detect regressions
 3. Document significant performance improvements
 
+## Regression Benchmarks
+
+In addition to the Benchee suite above, a couple of standalone scripts using
+plain `:timer.tc/1` (no Benchee dependency needed) live alongside it:
+
+- `stress_test.exs` — large-graph memory/scaling smoke test.
+- `blank_node_pruning_bench.exs` — regression check for the O(n²)
+  blank-node-identifier-pruning bug (see CHANGELOG "Unreleased (Leapsight
+  fork)"). Frames graphs with 100-1600 rows, each carrying one embedded
+  object (a single-occurrence blank node), and reports the pairwise scaling
+  factor between sizes — should stay close to 1.0x (linear); growth toward
+  2.0x indicates the quadratic behavior has regressed.
+
+Run either with `mix run bench/<script>.exs`.
+
 ## Custom Benchmarks
 
 To add custom benchmarks, edit `framing_bench.exs` and add new test cases following the existing patterns.

@@ -2582,8 +2582,13 @@ defmodule JSON.LD.Framing do
   # This function recursively walks both frames and restores those keywords
   defp merge_framing_keywords(expanded, original) when is_map(expanded) and is_map(original) do
     # First, copy framing keywords from original to expanded
+    # @default is excluded: unlike @embed/@explicit/@omitDefault/@requireAll
+    # (simple flags, identical whether taken from original or expanded),
+    # @default carries arbitrary JSON-LD data that expand/5 now properly
+    # recursively expands (see the "@default" case in expansion.ex). Restoring
+    # the raw, unexpanded original here would silently undo that expansion.
     result =
-      Enum.reduce(@framing_keywords, expanded, fn keyword, acc ->
+      Enum.reduce(@framing_keywords -- [@default], expanded, fn keyword, acc ->
         if Map.has_key?(original, keyword) do
           Map.put(acc, keyword, original[keyword])
         else
@@ -2813,19 +2818,20 @@ defmodule JSON.LD.Framing do
     # Step 2: Get properties with @type: @id from context (these need to preserve blank node IDs)
     id_properties = get_id_properties_from_context(context)
 
-    # Step 3: Identify blank node IDs to clear (appear only once AND not needed by @type: @id properties)
+    # Step 3: Single O(n) pass collecting every @id reached under a @type: @id
+    # property, instead of re-scanning the whole tree once per candidate
+    # blank node (previously O(single_occurrence_blank_nodes * tree_size))
+    ids_needed_by_id_property = collect_ids_needed_by_id_property(value, id_properties)
+
+    # Step 4: Identify blank node IDs to clear (appear only once AND not needed by @type: @id properties)
     bnodes_to_clear =
       bnode_counts
       |> Enum.filter(fn {_id, count} -> count == 1 end)
-      |> Enum.reject(fn {id, _} ->
-        # Don't prune if this blank node is the @id of an object that's a value
-        # of a property with @type: @id (compaction needs the @id in this case)
-        blank_node_needed_by_id_property?(id, value, id_properties)
-      end)
+      |> Enum.reject(fn {id, _} -> MapSet.member?(ids_needed_by_id_property, id) end)
       |> Enum.map(fn {id, _} -> id end)
       |> MapSet.new()
 
-    # Step 4: Recursively remove @id from nodes with blank node IDs in bnodes_to_clear
+    # Step 5: Recursively remove @id from nodes with blank node IDs in bnodes_to_clear
     prune_ids(value, bnodes_to_clear)
   end
 
@@ -2931,47 +2937,47 @@ defmodule JSON.LD.Framing do
 
   defp get_id_properties_from_context(_), do: MapSet.new()
 
-  # Check if a blank node ID is needed because it's the @id of an object
-  # that is a value of a property with @type: @id
-  defp blank_node_needed_by_id_property?(_blank_node_id, _value, id_properties)
-       when map_size(id_properties) == 0 do
-    false
-  end
-
-  defp blank_node_needed_by_id_property?(blank_node_id, value, id_properties) do
-    check_blank_node_in_value(blank_node_id, value, id_properties, nil)
-  end
-
-  # Recursively check if blank_node_id appears as @id of object that's value of an
-  # @type: @id property
-  defp check_blank_node_in_value(blank_node_id, value, id_properties, parent_property)
-       when is_map(value) do
-    # Check if this object has the blank node as @id and parent property has @type: @id
-    is_match =
-      Map.get(value, @id) == blank_node_id and parent_property != nil and
-        MapSet.member?(id_properties, parent_property)
-
-    if is_match do
-      true
+  # Single-pass collection of every @id value that appears on an object which
+  # is itself the value of a property with @type: @id in the context. Used to
+  # decide which blank node ids must be preserved during pruning, without
+  # re-traversing the whole tree once per candidate blank node.
+  defp collect_ids_needed_by_id_property(value, id_properties) do
+    if MapSet.size(id_properties) == 0 do
+      MapSet.new()
     else
-      # Recursively check in nested structures, tracking the property name
-      Enum.any?(value, fn {key, val} ->
-        check_blank_node_in_value(blank_node_id, val, id_properties, key)
-      end)
+      do_collect_ids_needed_by_id_property(value, id_properties, nil, MapSet.new())
     end
   end
 
-  defp check_blank_node_in_value(blank_node_id, value, id_properties, parent_property)
-       when is_list(value) do
-    # When recursing into array values, PRESERVE the parent_property
-    # because the array items are still values of that property
-    Enum.any?(value, fn item ->
-      check_blank_node_in_value(blank_node_id, item, id_properties, parent_property)
+  defp do_collect_ids_needed_by_id_property(value, id_properties, parent_property, acc)
+       when is_map(value) do
+    acc =
+      case Map.get(value, @id) do
+        id when is_binary(id) ->
+          if not is_nil(parent_property) and MapSet.member?(id_properties, parent_property) do
+            MapSet.put(acc, id)
+          else
+            acc
+          end
+
+        _ ->
+          acc
+      end
+
+    Enum.reduce(value, acc, fn {key, val}, acc2 ->
+      do_collect_ids_needed_by_id_property(val, id_properties, key, acc2)
     end)
   end
 
-  defp check_blank_node_in_value(_blank_node_id, _value, _id_properties, _parent_property),
-    do: false
+  defp do_collect_ids_needed_by_id_property(value, id_properties, parent_property, acc)
+       when is_list(value) do
+    Enum.reduce(value, acc, fn item, acc2 ->
+      do_collect_ids_needed_by_id_property(item, id_properties, parent_property, acc2)
+    end)
+  end
+
+  defp do_collect_ids_needed_by_id_property(_value, _id_properties, _parent_property, acc),
+    do: acc
 
   # Extract property-scoped contexts from frame and add them to frame_context
   # This scans the frame for properties that have @context in their values and creates
