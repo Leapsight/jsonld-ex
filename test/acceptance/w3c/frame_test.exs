@@ -8,10 +8,8 @@ defmodule JSON.LD.W3C.FrameTest do
   use ExUnit.Case, async: false
   use RDF.Test.EarlFormatter, test_suite: :"json-ld-framing"
 
-  import JSON.LD.TestSuite
   import JSON.LD.Case
 
-  @test_suite_name "frame"
   @base_url "https://w3c.github.io/json-ld-framing/tests/"
 
   # Fetch manifest from remote at compile time
